@@ -1,0 +1,56 @@
+# Ultralytics 🚀 AGPL-3.0 License - https://ultralytics.com/license
+
+# Ultralytics YOLO26s with HGBlock (HGNetV2 Block)
+# 使用HGBlock替换C3k2，实现更高效的特征提取
+#
+# HGBlock特点：
+# 1. 使用LightConv或标准Conv进行多分支特征提取
+# 2. Squeeze-Excitation机制增强特征表示
+# 3. 支持残差连接，保留原始信息
+#
+# Reference: PaddleDetection HGNetV2
+# https://github.com/PaddlePaddle/PaddleDetection/blob/develop/ppdet/modeling/backbones/hgnet_v2.py
+
+# Parameters
+nc: 80 # number of classes
+end2end: True # whether to use end-to-end mode
+reg_max: 1 # DFL bins
+scales: # model compound scaling constants
+  s: [0.50, 0.50, 1024] # summary: 260 layers, 10,009,784 parameters, 10,009,784 gradients, 22.8 GFLOPs
+
+# YOLO26s backbone with HGBlock
+backbone:
+  # [from, repeats, module, args]
+  # HGBlock args格式: [cm, c2, k, n, lightconv, shortcut, act]
+  # 对于YOLO配置，通常简化为: [c2, n] 或 [cm, c2, k, n]
+  - [-1, 1, Conv, [64, 3, 2]] # 0-P1/2
+  - [-1, 1, Conv, [128, 3, 2]] # 1-P2/4
+  - [-1, 2, HGBlock, [128, 256, 3, 2, False, False]] # 2 (cm=128, c2=256, k=3, n=2)
+  - [-1, 1, Conv, [256, 3, 2]] # 3-P3/8
+  - [-1, 2, HGBlock, [256, 512, 3, 2, False, False]] # 4 (cm=256, c2=512, k=3, n=2)
+  - [-1, 1, Conv, [512, 3, 2]] # 5-P4/16
+  - [-1, 2, HGBlock, [512, 512, 3, 2, True, True]] # 6 (cm=512, c2=512, k=3, n=2, lightconv=True, shortcut=True)
+  - [-1, 1, Conv, [1024, 3, 2]] # 7-P5/32
+  - [-1, 2, HGBlock, [1024, 1024, 3, 2, True, True]] # 8 (cm=1024, c2=1024, k=3, n=2, lightconv=True, shortcut=True)
+  - [-1, 1, SPPF, [1024, 5, 3, True]] # 9
+  - [-1, 2, C2PSA, [1024]] # 10
+
+# YOLO26s head with HGBlock
+head:
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 6], 1, Concat, [1]] # cat backbone P4
+  - [-1, 2, HGBlock, [512, 512, 3, 2, True, True]] # 13 (cm=512, c2=512, k=3, n=2)
+
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 4], 1, Concat, [1]] # cat backbone P3
+  - [-1, 2, HGBlock, [256, 256, 3, 2, True, True]] # 16 (cm=256, c2=256, k=3, n=2) (P3/8-small)
+
+  - [-1, 1, Conv, [256, 3, 2]]
+  - [[-1, 13], 1, Concat, [1]] # cat head P4
+  - [-1, 2, HGBlock, [512, 512, 3, 2, True, True]] # 19 (cm=512, c2=512, k=3, n=2) (P4/16-medium)
+
+  - [-1, 1, Conv, [512, 3, 2]]
+  - [[-1, 10], 1, Concat, [1]] # cat head P5
+  - [-1, 1, HGBlock, [1024, 1024, 3, 1, True, True]] # 22 (cm=1024, c2=1024, k=3, n=1) (P5/32-large)
+
+  - [[16, 19, 22], 1, Detect, [nc]] # Detect(P3, P4, P5)

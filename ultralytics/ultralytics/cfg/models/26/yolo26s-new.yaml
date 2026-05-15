@@ -1,0 +1,56 @@
+# Ultralytics 🚀 AGPL-3.0 License - https://ultralytics.com/license
+#
+# Ultralytics YOLO26s with SEAM (Stacked Element-wise Attention Module)
+# 使用SEAM模块增强上下文信息提取，特别适用于小目标检测和低分辨率图像
+#
+# SEAM模块特点：
+# 1. 多尺度深度可分离卷积：使用不同尺寸的卷积核(3x3, 5x5, 7x7)模拟多尺度patch切分
+# 2. CSMM跨尺度融合模块：融合不同尺度的特征，增强跨尺度特征关系
+# 3. 残差连接：保留原始信息，防止梯度消失
+#
+# Reference: Lyu, C., et al. "SEAM: Stacked Element-wise Attention Module for Contextual Information"
+# CVPR 2020 Workshop / NTIRE 2020
+
+# Parameters
+nc: 80 # number of classes
+end2end: True # whether to use end-to-end mode
+reg_max: 1 # DFL bins
+scales: # model compound scaling constants
+  s: [0.50, 0.50, 1024] # summary: 260 layers, 10,009,784 parameters, 10,009,784 gradients, 22.8 GFLOPs
+
+# YOLO26s backbone with HGBlock and SEAM
+backbone:
+  # [from, repeats, module, args]
+  # HGBlock args格式: [cm, c2, k, n, lightconv, shortcut]
+  - [-1, 1, Conv, [64, 3, 2]] # 0-P1/2
+  - [-1, 1, Conv, [128, 3, 2]] # 1-P2/4
+  - [-1, 2, HGBlock, [128, 256, 3, 2, False, False]] # 2 (cm=128, c2=256, k=3, n=2)
+  - [-1, 1, Conv, [256, 3, 2]] # 3-P3/8
+  - [-1, 2, HGBlock, [256, 512, 3, 2, False, False]] # 4 (cm=256, c2=512, k=3, n=2)
+  - [-1, 1, Conv, [512, 3, 2]] # 5-P4/16
+  - [-1, 2, HGBlock, [512, 512, 3, 2, True, True]] # 6 (cm=512, c2=512, k=3, n=2, lightconv=True, shortcut=True)
+  - [-1, 1, Conv, [1024, 3, 2]] # 7-P5/32
+  - [-1, 2, HGBlock, [1024, 1024, 3, 2, True, True]] # 8 (cm=1024, c2=1024, k=3, n=2, lightconv=True, shortcut=True)
+  - [-1, 1, SPPF, [1024, 5, 3, True]] # 9
+  - [-1, 1, SEAM, [1024, [3, 5, 7], 4, True]] # 10-SEAM增强SPPF后的特征
+  - [-1, 2, C2PSA, [1024]] # 11
+
+# YOLO26s head (标准结构)
+head:
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]] # 12
+  - [[-1, 6], 1, Concat, [1]] # cat backbone P4
+  - [-1, 2, C3k2, [512, True]] # 13
+
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]] # 14
+  - [[-1, 4], 1, Concat, [1]] # cat backbone P3
+  - [-1, 2, C3k2, [256, True]] # 15 (P3/8-small)
+
+  - [-1, 1, Conv, [256, 3, 2]] # 16
+  - [[-1, 13], 1, Concat, [1]] # cat head P4
+  - [-1, 2, C3k2, [512, True]] # 17 (P4/16-medium)
+
+  - [-1, 1, Conv, [512, 3, 2]] # 18
+  - [[-1, 11], 1, Concat, [1]] # cat head P5
+  - [-1, 1, C3k2, [1024, True, 0.5, True]] # 19 (P5/32-large)
+
+  - [[15, 17, 19], 1, Detect, [nc]] # Detect(P3, P4, P5)

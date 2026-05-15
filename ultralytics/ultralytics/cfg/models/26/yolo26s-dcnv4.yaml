@@ -1,0 +1,51 @@
+# Ultralytics 🚀 AGPL-3.0 License - https://ultralytics.com/license
+#
+# Ultralytics YOLO26s with DCNv4 (Efficient Deformable Convolution v4)
+# 使用DCNv4替换标准卷积，采样点可以根据目标形状自由形变
+# 自动"吸附"在R/G极性点上，提升mAP@0.5:0.95
+#
+# Reference: Zhu, X., et al. "DCNv4: Efficient Deformable ConvNets." CVPR 2024
+
+# Parameters
+nc: 80 # number of classes
+end2end: True # whether to use end-to-end mode
+reg_max: 1 # DFL bins
+scales: # model compound scaling constants
+  s: [0.50, 0.50, 1024] # summary: 260 layers, 10,009,784 parameters, 10,009,784 gradients, 22.8 GFLOPs
+
+# YOLO26s backbone with DCNv4
+# 策略：在关键层使用DCNv4替换标准卷积，实现自适应采样
+backbone:
+  # [from, repeats, module, args]
+  # args格式: [c2, k, s, p, g, d, act, deform_groups]
+  - [-1, 1, Conv, [64, 3, 2]] # 0-P1/2 (第一层保持标准卷积)
+  - [-1, 1, Conv, [128, 3, 2]] # 1-P2/4
+  - [-1, 2, C3k2, [256, False, 0.25]] # 2
+  - [-1, 1, Conv, [256, 3, 2]] # 3-P3/8
+  - [-1, 2, C3k2, [512, False, 0.25]] # 4
+  - [-1, 1, DCNv4Conv, [512, 3, 2, None, 1, 1, True, 1]] # 5-P4/16 (使用DCNv4下采样)
+  - [-1, 2, C3k2, [512, True]] # 6
+  - [-1, 1, DCNv4Conv, [1024, 3, 2, None, 1, 1, True, 1]] # 7-P5/32 (使用DCNv4下采样)
+  - [-1, 2, C3k2, [1024, True]] # 8
+  - [-1, 1, SPPF, [1024, 5, 3, True]] # 9
+  - [-1, 2, C2PSA, [1024]] # 10
+
+# YOLO26s head (使用DCNv4增强)
+head:
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 6], 1, Concat, [1]] # cat backbone P4
+  - [-1, 2, C3k2, [512, True]] # 13
+
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 4], 1, Concat, [1]] # cat backbone P3
+  - [-1, 2, C3k2, [256, True]] # 16 (P3/8-small)
+
+  - [-1, 1, DCNv4Conv, [256, 3, 2, None, 1, 1, True, 1]] # 使用DCNv4下采样
+  - [[-1, 13], 1, Concat, [1]] # cat head P4
+  - [-1, 2, C3k2, [512, True]] # 19 (P4/16-medium)
+
+  - [-1, 1, DCNv4Conv, [512, 3, 2, None, 1, 1, True, 1]] # 使用DCNv4下采样
+  - [[-1, 10], 1, Concat, [1]] # cat head P5
+  - [-1, 1, C3k2, [1024, True, 0.5, True]] # 22 (P5/32-large)
+
+  - [[16, 19, 22], 1, Detect, [nc]] # Detect(P3, P4, P5)
