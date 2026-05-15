@@ -22,19 +22,3 @@
 * **骨干网络**：以 **YOLOv26** 为基座，针对脉冲图像特性进行深度优化。
 * **SEAM 注意力机制**：引入多尺度注意力机制，增强模型对细微特征的感知能力，解决脉冲图像细节单调导致的特征混叠问题。
 * **CSMM 模块**：结合深度可分离卷积与残差连接，在保证轻量化的同时提升特征提取效率。
-
-## 📊 实验结果 (Results)
-
-在复杂水下场景下的实验结果显示，SF-YOLO 表现出极强的鲁棒性：
-* **模糊场景**：mAP@0.5 提升约 **36%**。
-* **昏暗场景**：mAP@0.5 提升约 **46%**。
-
-*对比实验涵盖了原生 YOLO、Faster R-CNN 等基准模型。*
-
-## 🚀 快速开始 (Quick Start)
-
-### 环境安装
-```bash
-git clone [https://github.com/YourUsername/SF-YOLO.git](https://github.com/YourUsername/SF-YOLO.git)
-cd SF-YOLO
-pip install -r requirements.txt
